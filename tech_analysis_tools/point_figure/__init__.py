@@ -166,8 +166,6 @@ class PointAndFigureChart:
                     # Reverse to a new O column
                     start_idx = last_high_idx
                     end_idx = low_idx
-                    print(f"start_idx = {start_idx}")
-                    print(f"end_idx = {end_idx}")
                     new_boxes = list(range(start_idx, end_idx - 1, -1))
                     
                     self.data['date'].append(date)
@@ -201,6 +199,137 @@ class PointAndFigureChart:
         
         return self
     
+    def identify_signals(self):
+            """
+            Identify trading signals based on P&F patterns
+            Currently implements:
+            - Double Top/Bottom Breakout
+            - Triple Top/Bottom Breakout
+            - Bullish/Bearish Signal Reversal
+            
+            Returns:
+            --------
+            signals : list of dict
+                List of identified signals with details
+            """
+            if not self.data['direction']:
+                return []
+                
+            signals = []
+            
+            # We need at least 3 columns to identify most patterns
+            if len(self.data['direction']) < 3:
+                return signals
+                
+            # Iterate through columns starting from the third one
+            for i in range(2, len(self.data['direction'])):
+                # Get current and previous columns
+                current_dir = self.data['direction'][i]
+                current_boxes = self.data['boxes'][i]
+                prev_dir = self.data['direction'][i-1]
+                prev_boxes = self.data['boxes'][i-1]
+                prev2_dir = self.data['direction'][i-2]
+                prev2_boxes = self.data['boxes'][i-2]
+                
+                # Current date for the signal
+                signal_date = self.data['date'][i]
+                
+                # 1. Double Top Breakout (X column breaks above previous X column)
+                if (current_dir == 'X' and prev2_dir == 'X' and prev_dir == 'O' and
+                    max(current_boxes) > max(prev2_boxes)):
+                    signals.append({
+                        'date': signal_date,
+                        'type': 'Double Top Breakout',
+                        'direction': 'buy',
+                        'price': self.box_values[max(current_boxes)],
+                        'column_index': i
+                    })
+                    
+                # 2. Double Bottom Breakdown (O column breaks below previous O column)
+                if (current_dir == 'O' and prev2_dir == 'O' and prev_dir == 'X' and
+                    min(current_boxes) < min(prev2_boxes)):
+                    signals.append({
+                        'date': signal_date,
+                        'type': 'Double Bottom Breakdown',
+                        'direction': 'sell',
+                        'price': self.box_values[min(current_boxes)],
+                        'column_index': i
+                    })
+                    
+                # 3. Triple Top Breakout (need at least 5 columns)
+                if i >= 4 and current_dir == 'X':
+                    # Find two previous X columns
+                    x_columns = []
+                    for j in range(i-1, -1, -1):
+                        if self.data['direction'][j] == 'X':
+                            x_columns.append(j)
+                        if len(x_columns) == 2:
+                            break
+                            
+                    if len(x_columns) == 2:
+                        prev_x1, prev_x2 = x_columns
+                        # Check if all three X columns reached the same level
+                        if (max(self.data['boxes'][prev_x1]) == max(self.data['boxes'][prev_x2]) and
+                            max(current_boxes) > max(self.data['boxes'][prev_x1])):
+                            signals.append({
+                                'date': signal_date,
+                                'type': 'Triple Top Breakout',
+                                'direction': 'buy',
+                                'price': self.box_values[max(current_boxes)],
+                                'column_index': i
+                            })
+                
+                # 4. Triple Bottom Breakdown (need at least 5 columns)
+                if i >= 4 and current_dir == 'O':
+                    # Find two previous O columns
+                    o_columns = []
+                    for j in range(i-1, -1, -1):
+                        if self.data['direction'][j] == 'O':
+                            o_columns.append(j)
+                        if len(o_columns) == 2:
+                            break
+                            
+                    if len(o_columns) == 2:
+                        prev_o1, prev_o2 = o_columns
+                        # Check if all three O columns reached the same level
+                        if (min(self.data['boxes'][prev_o1]) == min(self.data['boxes'][prev_o2]) and
+                            min(current_boxes) < min(self.data['boxes'][prev_o1])):
+                            signals.append({
+                                'date': signal_date,
+                                'type': 'Triple Bottom Breakdown',
+                                'direction': 'sell',
+                                'price': self.box_values[min(current_boxes)],
+                                'column_index': i
+                            })
+                            
+                # 5. Bullish Signal (X column rises one box higher than previous X column)
+                if current_dir == 'X' and prev_dir == 'O' and i >= 2:
+                    prev_x_idx = i - 2  # Previous X column
+                    if max(current_boxes) > max(self.data['boxes'][prev_x_idx]):
+                        signals.append({
+                            'date': signal_date,
+                            'type': 'Bullish Signal',
+                            'direction': 'buy',
+                            'price': self.box_values[max(current_boxes)],
+                            'column_index': i
+                        })
+                        
+                # 6. Bearish Signal (O column falls one box lower than previous O column)
+                if current_dir == 'O' and prev_dir == 'X' and i >= 2:
+                    prev_o_idx = i - 2  # Previous O column
+                    if min(current_boxes) < min(self.data['boxes'][prev_o_idx]):
+                        signals.append({
+                            'date': signal_date,
+                            'type': 'Bearish Signal',
+                            'direction': 'sell',
+                            'price': self.box_values[min(current_boxes)],
+                            'column_index': i
+                        })
+            
+            self.signals = signals
+            return signals
+
+
     def plot(self, figsize=(12, 8), show_signals=True):
         """
         Plot the Point and Figure chart
